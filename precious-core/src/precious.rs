@@ -101,6 +101,7 @@ pub struct App {
 
 #[derive(Debug, Parser)]
 pub enum Subcommand {
+    Audit(CommonArgs),
     Lint(CommonArgs),
     Tidy(CommonArgs),
 }
@@ -149,6 +150,7 @@ pub struct Precious {
     quiet: bool,
     thread_pool: ThreadPool,
     should_lint: bool,
+    should_audit: bool,
     paths: Vec<PathBuf>,
 }
 
@@ -214,9 +216,10 @@ impl Precious {
         let config = config::Config::new(config_file)?;
         let quiet = app.quiet;
         let jobs = app.jobs;
-        let (should_lint, paths, command) = match app.subcommand {
-            Subcommand::Lint(a) => (true, a.paths, a.command),
-            Subcommand::Tidy(a) => (false, a.paths, a.command),
+        let (should_lint, should_audit, paths, command) = match app.subcommand {
+            Subcommand::Audit(a) => (false, true, a.paths, a.command),
+            Subcommand::Lint(a) => (true, false, a.paths, a.command),
+            Subcommand::Tidy(a) => (false, false, a.paths, a.command),
         };
 
         Ok(Precious {
@@ -229,12 +232,14 @@ impl Precious {
             quiet,
             thread_pool: ThreadPoolBuilder::new().num_threads(jobs).build()?,
             should_lint,
+            should_audit,
             paths,
         })
     }
 
     fn mode(app: &App) -> Result<paths::mode::Mode> {
         let common = match &app.subcommand {
+            Subcommand::Audit(c) => c,
             Subcommand::Lint(c) => c,
             Subcommand::Tidy(c) => c,
         };
@@ -354,6 +359,8 @@ impl Precious {
     fn run_subcommand(&mut self) -> Result<Exit> {
         if self.should_lint {
             self.lint()
+        } else if self.should_audit {
+            self.audit()
         } else {
             self.tidy()
         }
@@ -379,6 +386,23 @@ impl Precious {
 
     fn lint(&mut self) -> Result<Exit> {
         println!("{} Linting {}", self.chars.ring, self.mode);
+
+        let linters = self
+            .config
+            // XXX - same as above.
+            .clone()
+            .into_lint_commands(&self.project_root, self.command.as_deref())?;
+        self.run_all_commands(
+            "linting",
+            linters,
+            |self_: &mut Self, files: &[PathBuf], linter: &command::Command| {
+                self_.run_one_linter(files, linter)
+            },
+        )
+    }
+
+    fn audit(&mut self) -> Result<Exit> {
+        println!("{} Auditing {}", self.chars.ring, self.mode);
 
         let linters = self
             .config

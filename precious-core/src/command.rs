@@ -16,6 +16,8 @@ use thiserror::Error;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
 pub enum CommandType {
+    #[serde(rename = "audit")]
+    Audit,
     #[serde(rename = "lint")]
     Lint,
     #[serde(rename = "tidy")]
@@ -27,6 +29,7 @@ pub enum CommandType {
 impl CommandType {
     fn what(&self) -> &'static str {
         match self {
+            CommandType::Audit => "linter",
             CommandType::Lint => "linter",
             CommandType::Tidy => "tidier",
             CommandType::Both => "linter/tidier",
